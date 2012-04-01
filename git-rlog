@@ -1,0 +1,65 @@
+#!/bin/bash -e
+## Show log since..until
+## for this repository and all submodules
+
+## read input, display help if necessary
+if [[ "$@" == *--help* ]]; then
+    cat<<EOF
+ Recursive log
+
+ This command compares commits between since and until recursively
+ for each submodule.
+
+ Usage:
+    git rlog [<since>..<until>]
+EOF
+    exit 0;
+fi
+
+# parse two commit tags if they're there
+if [[ x"$1" != x ]]; then
+  since=$1
+else
+  echo "Please specify since"
+  exit 1
+fi
+if [[ x"$2" != x ]]; then
+  until=$2
+else
+  echo "Please specify until"
+  exit 1
+fi
+
+
+## ensure we are in the toplevel directory
+cdup=$(git rev-parse --show-toplevel) &&
+cd "$cdup" || {
+    echo >&2 "Cannot chdir to $cdup, the toplevel of the working tree"
+    exit 1
+}
+
+dsince=`git describe $since 2> /dev/null || echo $since`
+duntil=`git describe $until 2> /dev/null || echo $until`
+
+echo
+echo module: $cdup
+echo since: $dsince
+echo until: $duntil
+echo
+
+# git --no-pager log --oneline $since..$until
+git --no-pager cherry --abbrev=8 -v $since $until
+
+## get a list of all direct submodule paths
+subpaths=`git submodule --quiet foreach 'echo $toplevel/$path'`
+for path in $subpaths; do
+    cd $cdup
+    cmd="git diff-tree -p $since $until -- $path"
+    if $cmd | grep +Subproject > /dev/null; then
+        subsince=`$cmd | grep -- '-Subproject' | cut -d' ' -f3`
+        subuntil=`$cmd | grep -- '+Subproject' | cut -d' ' -f3`
+        cd $path
+        git rlog $subsince $subuntil
+    fi
+done
+
